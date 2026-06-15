@@ -177,3 +177,19 @@ def test_detect_terminal_graphics_env(monkeypatch):
 
     monkeypatch.setenv("TERM", "xterm-256color")
     assert render.detect_terminal_graphics() == "unicode"
+
+
+def test_vscode_terminal_ignores_leaked_graphics_env(monkeypatch):
+    # The VS Code / Cursor integrated terminal can't show inline images by
+    # default, yet inherits ITERM_SESSION_ID/KITTY_WINDOW_ID when launched from
+    # those terminals. TERM_PROGRAM=vscode must win → unicode, never a protocol
+    # whose escapes the embedded terminal would silently drop.
+    for key in ("KITTY_WINDOW_ID", "TERM_PROGRAM", "ITERM_SESSION_ID", "WEZTERM_PANE", "TERM"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("TERM_PROGRAM", "vscode")
+
+    assert render.detect_terminal_graphics() == "unicode"
+    for leaked in ("ITERM_SESSION_ID", "KITTY_WINDOW_ID", "WEZTERM_PANE"):
+        monkeypatch.setenv(leaked, "1")
+        assert render.detect_terminal_graphics() == "unicode"
+        monkeypatch.delenv(leaked)

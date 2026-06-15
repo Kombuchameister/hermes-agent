@@ -7,7 +7,7 @@ decode + capability-detection + protocol-encoding logic exists exactly once.
 Supported output modes, in fidelity order:
 
 - ``kitty``   — the kitty graphics protocol (kitty, Ghostty, WezTerm).
-- ``iterm``   — iTerm2 inline images (iTerm2, WezTerm, VS Code terminal).
+- ``iterm``   — iTerm2 inline images (iTerm2, WezTerm).
 - ``sixel``   — DEC sixel (xterm -ti vt340, foot, mlterm, WezTerm, …).
 - ``unicode`` — 24-bit half-block downscale; works in any truecolor terminal.
 
@@ -56,6 +56,17 @@ def detect_terminal_graphics() -> str:
     term = os.environ.get("TERM", "").lower()
     term_program = os.environ.get("TERM_PROGRAM", "").lower()
 
+    # The VS Code / Cursor integrated terminal sets TERM_PROGRAM=vscode
+    # authoritatively but does NOT scrub the terminal env vars it inherits when
+    # launched from another emulator (ITERM_SESSION_ID, KITTY_WINDOW_ID, …).
+    # Trusting those leaks emits an image protocol the embedded xterm.js can't
+    # display — you get a blank frame. Inline images there are opt-in
+    # (terminal.integrated.enableImages), so default to half-blocks, which
+    # always render in its truecolor grid. Users who enabled images can pin
+    # display.pet.render_mode explicitly.
+    if term_program == "vscode":
+        return "unicode"
+
     # kitty graphics protocol
     if os.environ.get("KITTY_WINDOW_ID") or "kitty" in term or "ghostty" in term:
         return "kitty"
@@ -68,8 +79,6 @@ def detect_terminal_graphics() -> str:
 
     # iTerm2 inline images
     if term_program == "iterm.app" or os.environ.get("ITERM_SESSION_ID"):
-        return "iterm"
-    if term_program == "vscode":
         return "iterm"
 
     # sixel-capable terminals (env heuristics only)
