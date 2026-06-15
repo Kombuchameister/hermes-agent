@@ -118,6 +118,10 @@ jobs:
         shell: pwsh
         run: |
           winget install -e --id AutoHotkey.AutoHotkey --silent --accept-source-agreements --accept-package-agreements --disable-interactivity
+          ls "$env:LOCALAPPDATA\"
+          ls "$env:LOCALAPPDATA\Programs\"
+          ls "$env:LOCALAPPDATA\Programs\AutoHotkey"
+          ls "$env:LOCALAPPDATA\Programs\AutoHotkey\v2"
           $ahkDir = "$env:LOCALAPPDATA\Programs\AutoHotkey\v2"
           ls $ahkDir
           exit 1
