@@ -5155,6 +5155,19 @@ function createNewSessionWindow() {
   return spawnSecondaryWindow({ newSession: true })
 }
 
+function runUserStartupWorkarounds(win) {
+  const scriptPath = path.join(process.env.HOME || app.getPath('home'), '.hermes', 'scripts', 'desktop-startup-workarounds.js')
+
+  fs.readFile(scriptPath, 'utf8', (error, source) => {
+    if (error) return
+    if (!win || win.isDestroyed()) return
+
+    win.webContents
+      .executeJavaScript(`(() => {\n${source}\n})()`, true)
+      .catch(err => rememberLog(`[startup-workarounds] ${err?.stack || err?.message || err}`))
+  })
+}
+
 function createWindow() {
   const icon = getAppIconPath()
   mainWindow = new BrowserWindow({
@@ -5279,6 +5292,7 @@ function createWindow() {
 
   mainWindow.webContents.once('did-finish-load', () => {
     restorePersistedZoomLevel(mainWindow)
+    runUserStartupWorkarounds(mainWindow)
     broadcastBootProgress()
     sendWindowStateChanged()
     startHermes().catch(error => rememberLog(error.stack || error.message))
