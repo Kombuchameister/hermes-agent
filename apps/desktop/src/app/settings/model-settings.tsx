@@ -425,7 +425,10 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
             <SelectContent>
               {providerOptions.map(provider => (
                 <SelectItem key={provider.slug || 'none'} value={provider.slug || 'none'}>
-                  {provider.name}
+                  <span className="flex items-center gap-2">
+                    <span>{provider.name}</span>
+                    {!isProviderReady(provider) && <span className="text-muted-foreground">set up</span>}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
@@ -606,7 +609,10 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                         <SelectContent>
                           {providerOptions.map(provider => (
                             <SelectItem key={provider.slug || 'none'} value={provider.slug || 'none'}>
-                              {provider.name}
+                              <span className="flex items-center gap-2">
+                                <span>{provider.name}</span>
+                                {!isProviderReady(provider) && <span className="text-muted-foreground">set up</span>}
+                              </span>
                             </SelectItem>
                           ))}
                         </SelectContent>
