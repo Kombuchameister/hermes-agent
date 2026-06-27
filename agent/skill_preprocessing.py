@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 # Tokens that don't resolve (e.g. ${HERMES_SESSION_ID} with no session) are
 # left as-is so the user can debug them.
 _SKILL_TEMPLATE_RE = re.compile(r"\$\{(HERMES_SKILL_DIR|HERMES_SESSION_ID)\}")
+_LEGACY_SKILL_DIR_RE = re.compile(r"\bSKILL_DIR\b")
 
 # Matches inline shell snippets like:  !`date +%Y-%m-%d`
 # Non-greedy, single-line only -- no newlines inside the backticks.
@@ -47,7 +48,15 @@ def substitute_template_vars(
     if not content:
         return content
 
-    skill_dir_str = str(skill_dir) if skill_dir else None
+    # Render the path the agent can actually reach on the active terminal
+    # backend (container / remote home), not the raw host path — otherwise
+    # bundled skill scripts referenced via ${HERMES_SKILL_DIR} are unrunnable
+    # inside a Docker/SSH/Daytona sandbox.  Local/unmapped falls back to host.
+    skill_dir_str = None
+    if skill_dir:
+        from agent.skill_path_mapping import map_skill_dir_for_backend
+
+        skill_dir_str = map_skill_dir_for_backend(skill_dir, task_id=session_id)
 
     def _replace(match: re.Match) -> str:
         token = match.group(1)
@@ -57,7 +66,10 @@ def substitute_template_vars(
             return str(session_id)
         return match.group(0)
 
-    return _SKILL_TEMPLATE_RE.sub(_replace, content)
+    rendered = _SKILL_TEMPLATE_RE.sub(_replace, content)
+    if skill_dir_str:
+        rendered = _LEGACY_SKILL_DIR_RE.sub(skill_dir_str, rendered)
+    return rendered
 
 
 def run_inline_shell(command: str, cwd: Path | None, timeout: int) -> str:

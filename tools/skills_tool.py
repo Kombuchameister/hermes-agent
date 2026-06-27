@@ -864,6 +864,7 @@ def skill_view(
     file_path: str = None,
     task_id: str = None,
     preprocess: bool = True,
+    include_host_skill_dir: bool = False,
 ) -> str:
     """
     View the content of a skill or a specific file within a skill directory.
@@ -1450,6 +1451,19 @@ def skill_view(
                     "Could not preprocess skill content for %s", skill_name, exc_info=True
                 )
 
+        agent_skill_dir = str(skill_dir) if skill_dir else None
+        if skill_dir:
+            try:
+                from agent.skill_path_mapping import map_skill_dir_for_backend
+
+                agent_skill_dir = map_skill_dir_for_backend(skill_dir, task_id=task_id)
+            except Exception:
+                logger.debug(
+                    "Could not map skill_dir for backend for %s",
+                    skill_name,
+                    exc_info=True,
+                )
+
         result = {
             "success": True,
             "name": skill_name,
@@ -1458,7 +1472,7 @@ def skill_view(
             "related_skills": related_skills,
             "content": rendered_content,
             "path": rel_path,
-            "skill_dir": str(skill_dir) if skill_dir else None,
+            "skill_dir": agent_skill_dir,
             "linked_files": linked_files if linked_files else None,
             "usage_hint": "To view linked files, call skill_view(name, file_path) where file_path is e.g. 'references/api.md' or 'assets/config.yaml'"
             if linked_files
@@ -1474,6 +1488,8 @@ def skill_view(
             if setup_needed
             else SkillReadinessStatus.AVAILABLE.value,
         }
+        if include_host_skill_dir and skill_dir and agent_skill_dir != str(skill_dir):
+            result["host_skill_dir"] = str(skill_dir)
 
         setup_help = next((e["help"] for e in required_env_vars if e.get("help")), None)
         if setup_help:
