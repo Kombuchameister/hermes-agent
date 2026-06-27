@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/react-query'
 import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 
 import { readActiveTerminal } from '@/app/right-sidebar/terminal/buffer'
+import { getHermesConfigRecordForProfile } from '@/hermes'
 import { translateNow } from '@/i18n'
 import {
   appendAssistantTextPart,
@@ -27,13 +28,15 @@ import {
 import { triggerHaptic } from '@/lib/haptics'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { parseTodos } from '@/lib/todos'
+import { playSpeechText } from '@/lib/voice-playback'
 import { setClarifyRequest } from '@/store/clarify'
 import { setSessionCompacting } from '@/store/compaction'
 import { refreshBackgroundProcesses } from '@/store/composer-status'
 import { $gateway } from '@/store/gateway'
 import { dispatchNativeNotification } from '@/store/native-notifications'
-import { notify } from '@/store/notifications'
+import { notify, notifyError } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
+import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import { clearAllPrompts, setApprovalRequest, setSecretRequest, setSudoRequest } from '@/store/prompts'
 import {
   setCurrentBranch,
@@ -52,6 +55,7 @@ import { broadcastSessionsChanged } from '@/store/session-sync'
 import { clearSessionSubagents, pruneDelegateFallbackSubagents, upsertSubagent } from '@/store/subagents'
 import { setSessionTodos } from '@/store/todos'
 import { recordToolDiff } from '@/store/tool-diffs'
+import { $voicePlayback } from '@/store/voice-playback'
 import type { RpcEvent } from '@/types/hermes'
 
 import type { ClientSessionState } from '../../types'
@@ -77,6 +81,16 @@ interface MessageStreamOptions {
 interface QueuedStreamDeltas {
   assistant: string
   reasoning: string
+}
+
+function configAutoTtsEnabled(config: unknown): boolean {
+  if (!config || typeof config !== 'object') {
+    return false
+  }
+
+  const voice = (config as { voice?: unknown }).voice
+
+  return Boolean(voice && typeof voice === 'object' && (voice as { auto_tts?: unknown }).auto_tts === true)
 }
 
 type SessionRuntimeStatePatch = Partial<
@@ -338,6 +352,48 @@ export function useMessageStream({
   const nativeSubagentSessionsRef = useRef<Set<string>>(new Set())
   // Turns that auto-compacted: skip post-turn hydrate so live scrollback survives.
   const compactedTurnRef = useRef<Set<string>>(new Set())
+  const autoTtsEnabledRef = useRef(false)
+
+  const refreshAutoTts = useCallback(async () => {
+    const profile = normalizeProfileKey($activeGatewayProfile.get())
+
+    try {
+      const config = await getHermesConfigRecordForProfile(profile)
+
+      if (normalizeProfileKey($activeGatewayProfile.get()) === profile) {
+        autoTtsEnabledRef.current = configAutoTtsEnabled(config)
+      }
+    } catch {
+      autoTtsEnabledRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshAutoTts()
+
+    return $activeGatewayProfile.subscribe(() => {
+      autoTtsEnabledRef.current = false
+      void refreshAutoTts()
+    })
+  }, [refreshAutoTts])
+
+  const readCompletedResponse = useCallback(async (sessionId: string, text: string) => {
+    const spokenText = text.trim()
+
+    if (!spokenText || !autoTtsEnabledRef.current || activeSessionIdRef.current !== sessionId) {
+      return
+    }
+
+    if ($voicePlayback.get().status !== 'idle') {
+      return
+    }
+
+    try {
+      await playSpeechText(spokenText, { source: 'read-aloud' })
+    } catch (error) {
+      notifyError(error, translateNow('assistant.thread.readAloudFailed'))
+    }
+  }, [activeSessionIdRef])
 
   const flushQueuedDeltas = useCallback(
     (sessionId?: string) => {
@@ -655,6 +711,8 @@ export function useMessageStream({
         void hydrateFromStoredSession(3, completedState.storedSessionId, sessionId)
       }
 
+      void readCompletedResponse(sessionId, text)
+
       dispatchNativeNotification({
         body: text.slice(0, 140) || translateNow('notifications.native.turnDoneBody'),
         kind: 'turnDone',
@@ -662,7 +720,7 @@ export function useMessageStream({
         title: translateNow('notifications.native.turnDoneTitle')
       })
     },
-    [hydrateFromStoredSession, refreshSessions, updateSessionState]
+    [hydrateFromStoredSession, readCompletedResponse, refreshSessions, updateSessionState]
   )
 
   const failAssistantMessage = useCallback(
@@ -823,7 +881,9 @@ export function useMessageStream({
           requestDesktopOnboarding(payload.credential_warning)
         }
 
-        void refreshHermesConfig()
+        void refreshHermesConfig().finally(() => {
+          void refreshAutoTts()
+        })
 
         if (modelChanged || providerChanged) {
           void queryClient.invalidateQueries({
@@ -1160,6 +1220,7 @@ export function useMessageStream({
       failAssistantMessage,
       flushQueuedDeltas,
       queryClient,
+      refreshAutoTts,
       refreshHermesConfig,
       sessionInterrupted,
       updateSessionState,
