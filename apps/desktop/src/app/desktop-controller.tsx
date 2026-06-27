@@ -56,8 +56,8 @@ import {
   $gatewayState,
   $messages,
   $messagingSessions,
-  $resumeFailedSessionId,
   $resumeExhaustedSessionId,
+  $resumeFailedSessionId,
   $selectedStoredSessionId,
   $sessions,
   $workingSessionIds,
@@ -726,7 +726,8 @@ export function DesktopController() {
     // already shows the previous profile's model.
     void refreshCurrentModel(true)
     void refreshActiveProfile()
-  }, [activeGatewayProfile, refreshCurrentModel])
+    void refreshHermesConfig()
+  }, [activeGatewayProfile, refreshCurrentModel, refreshHermesConfig])
 
   const composer = useComposerActions({
     activeSessionId,
