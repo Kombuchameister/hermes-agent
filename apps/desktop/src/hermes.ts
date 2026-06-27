@@ -130,8 +130,8 @@ export function setApiRequestProfile(profile: null | string): void {
   _apiProfile = profile || null
 }
 
-function profileScoped(): { profile?: string } {
-  return _apiProfile ? { profile: _apiProfile } : {}
+function profileScoped(profile: null | string = _apiProfile): { profile?: string } {
+  return profile ? { profile } : {}
 }
 
 export async function listSessions(
@@ -318,9 +318,23 @@ export function getHermesConfigRecord(): Promise<HermesConfigRecord> {
   })
 }
 
+export function getHermesConfigRecordForProfile(profile: null | string): Promise<HermesConfigRecord> {
+  return window.hermesDesktop.api<HermesConfigRecord>({
+    ...profileScoped(profile),
+    path: '/api/config'
+  })
+}
+
 export function getHermesConfigDefaults(): Promise<HermesConfigRecord> {
   return window.hermesDesktop.api<HermesConfigRecord>({
     ...profileScoped(),
+    path: '/api/config/defaults'
+  })
+}
+
+export function getHermesConfigDefaultsForProfile(profile: null | string): Promise<HermesConfigRecord> {
+  return window.hermesDesktop.api<HermesConfigRecord>({
+    ...profileScoped(profile),
     path: '/api/config/defaults'
   })
 }
@@ -332,9 +346,25 @@ export function getHermesConfigSchema(): Promise<ConfigSchemaResponse> {
   })
 }
 
+export function getHermesConfigSchemaForProfile(profile: null | string): Promise<ConfigSchemaResponse> {
+  return window.hermesDesktop.api<ConfigSchemaResponse>({
+    ...profileScoped(profile),
+    path: '/api/config/schema'
+  })
+}
+
 export function saveHermesConfig(config: HermesConfigRecord): Promise<{ ok: boolean }> {
   return window.hermesDesktop.api<{ ok: boolean }>({
     ...profileScoped(),
+    path: '/api/config',
+    method: 'PUT',
+    body: { config }
+  })
+}
+
+export function saveHermesConfigForProfile(config: HermesConfigRecord, profile: null | string): Promise<{ ok: boolean }> {
+  return window.hermesDesktop.api<{ ok: boolean }>({
+    ...profileScoped(profile),
     path: '/api/config',
     method: 'PUT',
     body: { config }
@@ -748,6 +778,7 @@ export function getActionStatus(name: string, lines = 200): Promise<ActionStatus
 export function transcribeAudio(dataUrl: string, mimeType?: string): Promise<AudioTranscriptionResponse> {
   return window.hermesDesktop.api<AudioTranscriptionResponse>({
     path: '/api/audio/transcribe',
+    ...profileScoped(),
     method: 'POST',
     body: {
       data_url: dataUrl,
@@ -759,6 +790,7 @@ export function transcribeAudio(dataUrl: string, mimeType?: string): Promise<Aud
 export function speakText(text: string): Promise<AudioSpeakResponse> {
   return window.hermesDesktop.api<AudioSpeakResponse>({
     path: '/api/audio/speak',
+    ...profileScoped(),
     method: 'POST',
     body: { text }
   })
@@ -766,6 +798,14 @@ export function speakText(text: string): Promise<AudioSpeakResponse> {
 
 export function getElevenLabsVoices(): Promise<ElevenLabsVoicesResponse> {
   return window.hermesDesktop.api<ElevenLabsVoicesResponse>({
-    path: '/api/audio/elevenlabs/voices'
+    path: '/api/audio/elevenlabs/voices',
+    ...profileScoped()
+  })
+}
+
+export function getElevenLabsVoicesForProfile(profile: null | string): Promise<ElevenLabsVoicesResponse> {
+  return window.hermesDesktop.api<ElevenLabsVoicesResponse>({
+    path: '/api/audio/elevenlabs/voices',
+    ...profileScoped(profile)
   })
 }

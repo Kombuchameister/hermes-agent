@@ -1,3 +1,4 @@
+import { useStore } from '@nanostores/react'
 import type { ChangeEvent, ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -7,15 +8,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  getElevenLabsVoices,
-  getHermesConfigDefaults,
-  getHermesConfigRecord,
-  getHermesConfigSchema,
-  saveHermesConfig
+  getElevenLabsVoicesForProfile,
+  getHermesConfigDefaultsForProfile,
+  getHermesConfigRecordForProfile,
+  getHermesConfigSchemaForProfile,
+  saveHermesConfigForProfile
 } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
+import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import type { ConfigFieldSchema, HermesConfigRecord } from '@/types/hermes'
 
 import { CONTROL_TEXT, EMPTY_SELECT_VALUE, FIELD_DESCRIPTIONS, FIELD_LABELS, SECTIONS } from './constants'
@@ -200,10 +202,21 @@ export function ConfigSettings({
   const [elevenLabsVoiceLabels, setElevenLabsVoiceLabels] = useState<Record<string, string>>({})
   const saveVersionRef = useRef(0)
   const [saveVersion, setSaveVersion] = useState(0)
+  const activeProfileKey = normalizeProfileKey(useStore($activeGatewayProfile))
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([getHermesConfigRecord(), getHermesConfigDefaults(), getHermesConfigSchema()])
+
+    setConfig(null)
+    setSchema(null)
+    saveVersionRef.current = 0
+    setSaveVersion(0)
+
+    Promise.all([
+      getHermesConfigRecordForProfile(activeProfileKey),
+      getHermesConfigDefaultsForProfile(activeProfileKey),
+      getHermesConfigSchemaForProfile(activeProfileKey)
+    ])
       .then(([c, d, s]) => {
         if (cancelled) {
           return
@@ -216,12 +229,15 @@ export function ConfigSettings({
       .catch(err => notifyError(err, c.failedLoad))
 
     return () => void (cancelled = true)
-  }, [])
+  }, [activeProfileKey, c.failedLoad])
 
   useEffect(() => {
     let cancelled = false
 
-    getElevenLabsVoices()
+    setElevenLabsVoiceOptions(null)
+    setElevenLabsVoiceLabels({})
+
+    getElevenLabsVoicesForProfile(activeProfileKey)
       .then(result => {
         if (cancelled || !result.available) {
           return
@@ -238,7 +254,7 @@ export function ConfigSettings({
       })
 
     return () => void (cancelled = true)
-  }, [])
+  }, [activeProfileKey])
 
   useEffect(() => {
     if (!config || saveVersion === 0) {
@@ -250,7 +266,7 @@ export function ConfigSettings({
     const t = window.setTimeout(() => {
       void (async () => {
         try {
-          await saveHermesConfig(config)
+          await saveHermesConfigForProfile(config, activeProfileKey)
 
           if (saveVersionRef.current === v) {
             onConfigSaved?.()
@@ -264,7 +280,7 @@ export function ConfigSettings({
     }, 550)
 
     return () => window.clearTimeout(t)
-  }, [config, onConfigSaved, saveVersion])
+  }, [activeProfileKey, config, onConfigSaved, saveVersion])
 
   const updateConfig = (next: HermesConfigRecord) => {
     saveVersionRef.current += 1
