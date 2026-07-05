@@ -22,7 +22,9 @@ export const useHermesConfigRecord = (profile?: null | string) =>
     staleTime: 0
   })
 
-export const setHermesConfigCache = (config: HermesConfigRecord, profile?: null | string) =>
-  queryClient.setQueryData<HermesConfigRecord>(hermesConfigKey(profile), config)
+export const setHermesConfigCache = (
+  next: HermesConfigRecord | undefined | ((prev: HermesConfigRecord | undefined) => HermesConfigRecord | undefined),
+  profile?: null | string
+) => queryClient.setQueryData<HermesConfigRecord>(hermesConfigKey(profile), next)
 
 export const invalidateHermesConfig = () => queryClient.invalidateQueries({ queryKey: HERMES_CONFIG_KEY })
