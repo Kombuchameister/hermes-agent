@@ -1756,10 +1756,49 @@ class FeishuAdapter(BasePlatformAdapter):
         await self._cancel_pending_tasks(self._pending_text_batch_tasks)
         await self._cancel_pending_tasks(self._pending_media_batch_tasks)
         self._reset_batch_buffers()
+
+        # Send a WebSocket CLOSE frame to Feishu BEFORE tearing down the
+        # thread loop. Without this, Feishu's server never learns the
+        # connection is dead and continues routing messages to the stale
+        # endpoint — the channel goes silent until the server-side
+        # CLOSE-WAIT expires (minutes to hours). See issue #10202.
+        #
+        # ``_disable_websocket_auto_reconnect()`` nils ``self._ws_client``,
+        # so capture the client reference first.
+        ws_client = self._ws_client
+        ws_thread_loop = self._ws_thread_loop
         self._disable_websocket_auto_reconnect()
         await self._stop_webhook_server()
 
-        ws_thread_loop = self._ws_thread_loop
+        if (
+            ws_client is not None
+            and ws_thread_loop is not None
+            and not ws_thread_loop.is_closed()
+            and hasattr(ws_client, "_disconnect")
+        ):
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    ws_client._disconnect(), ws_thread_loop
+                )
+                # 5s is generous — the CLOSE frame is a single WebSocket
+                # control frame. If it takes longer than that the
+                # connection is already wedged and we gain nothing by
+                # waiting further.
+                await asyncio.wait_for(asyncio.wrap_future(future), timeout=5.0)
+                logger.debug("[Feishu] Sent WebSocket CLOSE frame to Feishu")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[Feishu] CLOSE frame not acknowledged within 5s — "
+                    "Feishu may briefly route messages to the stale "
+                    "connection until server-side timeout"
+                )
+            except Exception as exc:
+                logger.debug(
+                    "[Feishu] Could not send WebSocket CLOSE frame: %s",
+                    exc,
+                    exc_info=True,
+                )
+
         if ws_thread_loop is not None and not ws_thread_loop.is_closed():
             logger.debug("[Feishu] Cancelling websocket thread tasks and stopping loop")
 
@@ -2892,6 +2931,7 @@ class FeishuAdapter(BasePlatformAdapter):
             source=source,
             raw_message=data,
             message_id=message_id,
+            channel_prompt=self._resolve_channel_prompt(chat_id),
             timestamp=datetime.now(),
         )
         logger.info("[Feishu] Routing reaction %s:%s on bot message %s as synthetic event", action, emoji_type, message_id)
@@ -2954,6 +2994,7 @@ class FeishuAdapter(BasePlatformAdapter):
             source=source,
             raw_message=data,
             message_id=token or str(uuid.uuid4()),
+            channel_prompt=self._resolve_channel_prompt(chat_id),
             timestamp=datetime.now(),
         )
         logger.info("[Feishu] Routing card action %r from %s in %s as synthetic command", action_tag, open_id, chat_id)
@@ -3156,6 +3197,18 @@ class FeishuAdapter(BasePlatformAdapter):
     # Inbound processing pipeline
     # =========================================================================
 
+    def _resolve_channel_prompt(self, chat_id: str, parent_id: str | None = None) -> str | None:
+        """Resolve a Feishu per-channel system prompt.
+
+        Mirrors the Discord/Slack behaviour so ``channel_prompts: {<chat_id>:
+        "<prompt>"}`` in ``PlatformConfig.extra`` is honoured for Feishu chats
+        instead of being silently ignored.
+        """
+        from gateway.platforms.base import resolve_channel_prompt
+        _config = getattr(self, "config", None)
+        _extra = getattr(_config, "extra", None) or {}
+        return resolve_channel_prompt(_extra, chat_id, parent_id)
+
     async def _process_inbound_message(
         self,
         *,
@@ -3233,6 +3286,7 @@ class FeishuAdapter(BasePlatformAdapter):
             media_types=media_types,
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
+            channel_prompt=self._resolve_channel_prompt(chat_id, thread_id or None),
             timestamp=datetime.now(),
         )
         await self._dispatch_inbound_event(normalized)
@@ -3535,9 +3589,16 @@ class FeishuAdapter(BasePlatformAdapter):
             ]
             for k in stale_keys:
                 del self._webhook_rate_counts[k]
-            # If still at capacity after pruning, allow through without tracking.
+            # If still at capacity after pruning, deny untracked keys (fail closed).
+            # The table only fills with this many distinct (account, endpoint, IP)
+            # triples under abuse; allowing untracked requests through at capacity
+            # would let an attacker who flooded the table bypass the limiter entirely.
             if rate_key not in self._webhook_rate_counts and len(self._webhook_rate_counts) >= _FEISHU_WEBHOOK_RATE_MAX_KEYS:
-                return True
+                logger.warning(
+                    "[Feishu] Webhook rate-limit table at capacity (%d keys) — denying untracked key",
+                    _FEISHU_WEBHOOK_RATE_MAX_KEYS,
+                )
+                return False
         self._webhook_rate_counts[rate_key] = (1, now)
         return True
 
@@ -4178,6 +4239,17 @@ class FeishuAdapter(BasePlatformAdapter):
                 return "bot_not_mentioned"
 
         if not is_group:
+            if os.getenv("FEISHU_ALLOW_ALL_USERS", "").strip().lower() in {"true", "1", "yes"}:
+                return None
+            if os.getenv("GATEWAY_ALLOW_ALL_USERS", "").strip().lower() in {"true", "1", "yes"}:
+                return None
+            # Empty FEISHU_ALLOWED_USERS is the pairing-mode default from setup:
+            # forward DMs to gateway intake so the pairing handshake can run.
+            # Gateway auth fail-closes agent access until approval.
+            if not self._allowed_group_users:
+                return None
+            if not (sender_ids and (sender_ids & self._allowed_group_users)):
+                return "dm_policy_rejected"
             return None
 
         if not self._allow_group_message(
