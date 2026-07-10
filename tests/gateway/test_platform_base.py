@@ -776,6 +776,22 @@ class TestMediaDeliveryPathValidation:
 
         assert filtered == [(str(safe.resolve()), True)]
 
+    def test_docker_volume_path_maps_to_host_before_validation(self, tmp_path, monkeypatch):
+        host_root = tmp_path / "documents"
+        report = host_root / "report.pdf"
+        report.parent.mkdir(parents=True)
+        report.write_bytes(b"%PDF-1.7")
+        self._patch_roots(monkeypatch, host_root)
+        monkeypatch.setenv(
+            "TERMINAL_DOCKER_VOLUMES",
+            f'["{host_root}:/output"]',
+        )
+
+        assert (
+            BasePlatformAdapter.validate_media_delivery_path("/output/report.pdf")
+            == str(report.resolve())
+        )
+
     def test_allows_operator_configured_extra_root(self, tmp_path, monkeypatch):
         extra_root = tmp_path / "operator-media"
         media_file = extra_root / "report.pdf"

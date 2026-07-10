@@ -8,6 +8,7 @@ and implement the required methods.
 import asyncio
 import inspect
 import ipaddress
+import json
 import logging
 import os
 import random
@@ -1238,6 +1239,49 @@ def _path_is_within(path: Path, root: Path) -> bool:
         return False
 
 
+_DOCKER_VOLUME_SPEC_RE = re.compile(r"^(?P<host>.+):(?P<container>/[^:]+?)(?::(?P<options>[^:]+))?$")
+
+
+def _map_docker_volume_path_to_host(candidate: str) -> str:
+    """Map a container-side Docker volume path back to its host path."""
+    raw_volumes = os.environ.get("TERMINAL_DOCKER_VOLUMES", "").strip()
+    if not raw_volumes:
+        return candidate
+    try:
+        parsed = json.loads(raw_volumes)
+    except Exception:
+        return candidate
+    if not isinstance(parsed, list):
+        return candidate
+
+    try:
+        container_path = Path(candidate)
+    except (OSError, RuntimeError, ValueError):
+        return candidate
+    if not container_path.is_absolute():
+        return candidate
+
+    best: tuple[int, str] | None = None
+    for spec in parsed:
+        if not isinstance(spec, str):
+            continue
+        match = _DOCKER_VOLUME_SPEC_RE.match(spec)
+        if not match:
+            continue
+        host = match.group("host")
+        container = match.group("container")
+        try:
+            container_root = Path(container)
+            rel = container_path.relative_to(container_root)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        mapped = str(Path(os.path.expanduser(host)) / rel)
+        score = len(container_root.parts)
+        if best is None or score > best[0]:
+            best = (score, mapped)
+    return best[1] if best else candidate
+
+
 def validate_media_delivery_path(path: str) -> Optional[str]:
     """Return a safe absolute file path for native media delivery, else None.
 
@@ -1265,6 +1309,7 @@ def validate_media_delivery_path(path: str) -> Optional[str]:
     if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in "`\"'":
         candidate = candidate[1:-1].strip()
     candidate = candidate.lstrip("`\"'").rstrip("`\"',.;:)}]")
+    candidate = _map_docker_volume_path_to_host(candidate)
     if not candidate:
         return None
 
