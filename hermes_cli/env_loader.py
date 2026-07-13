@@ -230,6 +230,7 @@ def load_hermes_dotenv(
       the user env exists.
     - if no user env exists, the project `.env` also overrides stale shell vars.
     """
+    desktop_session_token = os.environ.get("HERMES_DASHBOARD_SESSION_TOKEN")
     loaded: list[Path] = []
 
     home_path = Path(hermes_home or os.getenv("HERMES_HOME", Path.home() / ".hermes"))
@@ -266,6 +267,11 @@ def load_hermes_dotenv(
 
     _apply_external_secret_sources(home_path)
     _apply_managed_env()
+
+    # Desktop mints this per-process credential before spawning Hermes. A stale
+    # user .env value must not replace it and break the local WebSocket.
+    if desktop_session_token is not None:
+        os.environ["HERMES_DASHBOARD_SESSION_TOKEN"] = desktop_session_token
 
     return loaded
 

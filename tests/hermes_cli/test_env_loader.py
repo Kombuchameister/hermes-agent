@@ -19,6 +19,17 @@ def test_user_env_overrides_stale_shell_values(tmp_path, monkeypatch):
     assert os.getenv("OPENAI_BASE_URL") == "https://new.example/v1"
 
 
+def test_desktop_session_token_is_not_overridden_by_env_file(tmp_path, monkeypatch):
+    home = tmp_path / "hermes"
+    home.mkdir()
+    (home / ".env").write_text("HERMES_DASHBOARD_SESSION_TOKEN=stale\n", encoding="utf-8")
+    monkeypatch.setenv("HERMES_DASHBOARD_SESSION_TOKEN", "fresh")
+
+    load_hermes_dotenv(hermes_home=home)
+
+    assert os.environ["HERMES_DASHBOARD_SESSION_TOKEN"] == "fresh"
+
+
 def test_project_env_overrides_stale_shell_values_when_user_env_missing(tmp_path, monkeypatch):
     home = tmp_path / "hermes"
     project_env = tmp_path / ".env"
