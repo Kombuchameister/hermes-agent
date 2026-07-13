@@ -14306,6 +14306,13 @@ _VALID_CHANNEL_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
 
+def _is_loopback_ws_peer(host: str) -> bool:
+    host = (host or "").lower()
+    if host.startswith("::ffff:"):
+        host = host.removeprefix("::ffff:")
+    return host in _LOOPBACK_HOSTS
+
+
 def _ws_client_reason(ws: "WebSocket") -> Optional[str]:
     """Return a rejection reason for the client IP, or None when allowed.
 
@@ -14328,7 +14335,7 @@ def _ws_client_reason(ws: "WebSocket") -> Optional[str]:
         # ws.client == None or "" — treating that as "allowed" would let
         # an unidentified peer reach a loopback-only surface.
         return f"missing_or_empty_peer bound={bound_host or '?'}"
-    if client_host in _LOOPBACK_HOSTS:
+    if _is_loopback_ws_peer(client_host):
         return None
     return f"peer_not_loopback peer={client_host} bound={bound_host or '?'}"
 
@@ -14373,7 +14380,7 @@ def _ws_client_is_allowed(ws: "WebSocket") -> bool:
         # client_host on a loopback-bound dashboard with auth disabled
         # must be rejected, not accepted as a default-allow.
         return False
-    return client_host in _LOOPBACK_HOSTS
+    return _is_loopback_ws_peer(client_host)
 
 
 def _ws_host_origin_reason(ws: "WebSocket") -> Optional[str]:

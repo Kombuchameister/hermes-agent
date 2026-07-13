@@ -343,6 +343,11 @@ class TestWsRequestIsAllowedGated:
         ws.headers = {"host": "127.0.0.1:8080"}
         assert web_server._ws_request_is_allowed(ws) is True
 
+    def test_ipv4_mapped_loopback_peer_allowed_in_loopback_mode(self, loopback_app):
+        ws = _fake_ws(query={}, client_host="::ffff:127.0.0.1")
+        ws.headers = {"host": "127.0.0.1:8080"}
+        assert web_server._ws_request_is_allowed(ws) is True
+
     def test_non_loopback_peer_allowed_in_insecure_public_mode(self, insecure_public_app):
         """`--host 0.0.0.0 --insecure` is an explicit LAN/public opt-in.
 
