@@ -3382,7 +3382,13 @@ function resolveHermesBackend(backendArgs) {
     }
   }
 
-  // 3. Bootstrap-complete ACTIVE_HERMES_ROOT -- the canonical install at
+  // 3. Existing runnable ACTIVE_HERMES_ROOT -- a CLI install or a desktop
+  // repair may not have a bootstrap marker, but its verified venv is enough.
+  if (isActiveRuntimeUsable()) {
+    return createActiveBackend(backendArgs)
+  }
+
+  // 4. Bootstrap-complete ACTIVE_HERMES_ROOT -- the canonical install at
   //    %LOCALAPPDATA%\hermes\hermes-agent (Windows) or ~/.hermes/hermes-agent.
   //    The bootstrap marker means install.ps1 stages finished and the user
   //    completed initial configuration; we trust the install and go straight
@@ -3392,7 +3398,7 @@ function resolveHermesBackend(backendArgs) {
     return createActiveBackend(backendArgs)
   }
 
-  // 4. Existing `hermes` on PATH -- installed via install.ps1 / install.sh from
+  // 5. Existing `hermes` on PATH -- installed via install.ps1 / install.sh from
   //    a previous tool-only setup, or pip-installed system-wide. Use it but
   //    do NOT write a bootstrap marker; the user did this themselves and we
   //    don't want to take ownership of an install we didn't perform.
@@ -3458,7 +3464,7 @@ function resolveHermesBackend(backendArgs) {
     }
   }
 
-  // 5. Last-ditch: pip-installed hermes_cli module via system Python.
+  // 6. Last-ditch: pip-installed hermes_cli module via system Python.
   //    Same rationale as #4 -- the user installed this; we use it but don't
   //    take ownership.
   const python = findSystemPython()
@@ -3487,7 +3493,7 @@ function resolveHermesBackend(backendArgs) {
     rememberLog(`Ignoring system Python ${python}: hermes_cli is not importable; falling through to bootstrap.`)
   }
 
-  // 6. Nothing usable yet -- signal the bootstrap runner that we need to
+  // 7. Nothing usable yet -- signal the bootstrap runner that we need to
   //    clone+install. Phase 1D's bootstrap-runner consumes this sentinel
   //    and drives install.ps1 stages with a progress UI. Until 1D lands,
   //    callers see the sentinel and surface it as a user-facing error
