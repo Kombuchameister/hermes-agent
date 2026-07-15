@@ -13,6 +13,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, join } from 'node:path'
 import {
+  chmodSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -124,6 +125,12 @@ export function stageNodePty({ platform = process.platform, arch = process.arch 
         `Run "npx electron-rebuild -w node-pty" for this target, or check that ` +
         `node-pty's published prebuilds cover ${platform}-${arch}.`
     )
+  }
+
+  if (platform === 'darwin') {
+    for (const helper of [join(destRoot, 'build/Release/spawn-helper'), join(destRoot, 'prebuilds', `${platform}-${arch}`, 'spawn-helper')]) {
+      if (existsSync(helper)) chmodSync(helper, 0o755)
+    }
   }
 
   console.log(`[stage-native-deps] staged node-pty (${platform}-${arch}) -> ${destRoot}`)

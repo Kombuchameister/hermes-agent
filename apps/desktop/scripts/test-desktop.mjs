@@ -357,6 +357,11 @@ function validateBundle() {
     if (!spawnHelper) {
       die(`Missing node-pty spawn-helper (required on darwin) in: ${nativeBinaryDirs.join(', ')}`)
     }
+    try {
+      fs.accessSync(spawnHelper, fs.constants.X_OK)
+    } catch {
+      die(`node-pty spawn-helper is not executable: ${spawnHelper}`)
+    }
   }
 
   // Renderer payload check (either unpacked or in the asar)
