@@ -236,7 +236,7 @@ def _load_skill_payload(skill_identifier: str, task_id: str | None = None) -> tu
         return None
 
     try:
-        from tools.skills_tool import SKILLS_DIR, skill_view
+        from tools.skills_tool import _skills_dir, skill_view
         from agent.skill_utils import normalize_skill_lookup_name
 
         normalized = normalize_skill_lookup_name(raw_identifier)
@@ -267,7 +267,7 @@ def _load_skill_payload(skill_identifier: str, task_id: str | None = None) -> tu
         skill_dir = Path(abs_skill_dir)
     elif skill_path:
         try:
-            skill_dir = SKILLS_DIR / Path(skill_path).parent
+            skill_dir = _skills_dir() / Path(skill_path).parent
         except Exception:
             skill_dir = None
 
@@ -322,7 +322,7 @@ def _build_skill_message(
     session_id: str | None = None,
 ) -> str:
     """Format a loaded skill into a user/system message payload."""
-    from tools.skills_tool import SKILLS_DIR
+    from tools.skills_tool import _skills_dir
 
     content = str(loaded_skill.get("content") or "")
 
@@ -411,7 +411,7 @@ def _build_skill_message(
 
     if supporting and skill_dir:
         try:
-            skill_view_target = str(skill_dir.relative_to(SKILLS_DIR))
+            skill_view_target = str(skill_dir.relative_to(_skills_dir()))
         except ValueError:
             # Skill is from an external dir — use the skill name instead
             skill_view_target = skill_dir.name
@@ -420,25 +420,12 @@ def _build_skill_message(
         # directory rather than the host skill_dir.
         hint_dir = agent_skill_dir or skill_dir
         parts.append("")
-        parts.append("[This skill has supporting files:]")
-        # When hint_dir is the backend-mapped POSIX path, a supporting-file
-        # entry carrying Windows separators (collected on a Windows host) would
-        # embed backslashes into the POSIX join (e.g.
-        # PurePosixPath("/root/.hermes") / "scripts\\foo.js"), yielding a
-        # mixed-separator path the backend cannot resolve.  Re-split each
-        # entry into platform-agnostic parts so the rendered hint is clean
-        # POSIX against a POSIX hint_dir (and unchanged against a host Path).
+        parts.append(
+            "[This skill has supporting files (paths relative to the skill "
+            "directory above):]"
+        )
         for sf in supporting:
-            # ``sf`` may carry Windows separators when collected on a Windows
-            # host.  On a POSIX runner ``PurePath('scripts\\todo').parts`` does
-            # NOT split on the backslash, so normalize the separator explicitly
-            # before joining against a POSIX hint_dir.
-            sf_for_join: str | PurePosixPath
-            if isinstance(hint_dir, PurePosixPath):
-                sf_for_join = PurePosixPath(sf.replace("\\", "/"))
-            else:
-                sf_for_join = sf
-            parts.append(f"- {sf}  ->  {hint_dir / sf_for_join}")
+            parts.append(f"- {sf}")
         parts.append(
             f'\nLoad any of these with skill_view(name="{skill_view_target}", '
             f'file_path="<path>"), or run scripts directly by absolute path '
@@ -483,7 +470,7 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
     # each naming the same skill as its own incumbent (#74574).
     commands: Dict[str, Dict[str, Any]] = {}
     try:
-        from tools.skills_tool import SKILLS_DIR, _parse_frontmatter, skill_matches_platform, skill_matches_environment, _get_disabled_skill_names
+        from tools.skills_tool import _skills_dir, _parse_frontmatter, skill_matches_platform, skill_matches_environment, _get_disabled_skill_names
         from agent.skill_utils import (
             get_external_skills_dirs,
             get_project_skills_dirs,
@@ -498,8 +485,12 @@ def scan_skill_commands() -> Dict[str, Dict[str, Any]]:
         # Project dirs iterate through the quarantine chokepoint.
         project_dirs = list(get_project_skills_dirs())
         dirs_to_scan = list(project_dirs)
-        if SKILLS_DIR.exists():
-            dirs_to_scan.append(SKILLS_DIR)
+        # Resolve at call time: the import-time SKILLS_DIR is frozen to the
+        # launch home, so a multiplexed profile scope (set_hermes_home_override)
+        # would still scan the default profile's skills (#67277).
+        skills_dir = _skills_dir()
+        if skills_dir.exists():
+            dirs_to_scan.append(skills_dir)
         dirs_to_scan.extend(get_external_skills_dirs())
 
         for scan_dir in dirs_to_scan:
