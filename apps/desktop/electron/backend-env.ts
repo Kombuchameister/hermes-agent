@@ -67,8 +67,11 @@ function userLocalBinFromHome({
   platform = process.platform,
   pathModule = pathModuleForPlatform(platform)
 }: any = {}) {
-  if (platform === 'win32') return null
+  if (platform === 'win32') {
+    return null
+  }
   const baseHome = homeDir || (hermesHome ? pathModule.dirname(hermesHome) : null)
+
   return baseHome ? pathModule.join(baseHome, '.local', 'bin') : null
 }
 

@@ -13314,11 +13314,21 @@ function createInstanceWindow() {
 }
 
 function runUserStartupWorkarounds(win) {
-  const scriptPath = path.join(process.env.HOME || app.getPath('home'), '.hermes', 'scripts', 'desktop-startup-workarounds.js')
+  const scriptPath = path.join(
+    process.env.HOME || app.getPath('home'),
+    '.hermes',
+    'scripts',
+    'desktop-startup-workarounds.js'
+  )
 
   fs.readFile(scriptPath, 'utf8', (error, source) => {
-    if (error) return
-    if (!win || win.isDestroyed()) return
+    if (error) {
+      return
+    }
+
+    if (!win || win.isDestroyed()) {
+      return
+    }
 
     win.webContents
       .executeJavaScript(`(() => {\n${source}\n})()`, true)
